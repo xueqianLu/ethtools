@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -130,8 +132,20 @@ func main() {
 			if !ok {
 				log.Fatal(errors.New("parse balance failed"))
 			}
+			var suggestGas = defaultgas.Uint64()
+			suggestGas, err = client.eth.EstimateGas(context.Background(), ethereum.CallMsg{
+				From:     sender,
+				To:       &tokenAddress,
+				Gas:      suggestGas,
+				GasPrice: defaultgasprice,
+				Value:    big.NewInt(0),
+				Data:     data,
+			})
+			if err != nil {
+				suggestGas = defaultgas.Uint64()
+			}
 
-			tx := types.NewTransaction(nonce, tokenAddress, big.NewInt(0), defaultgas.Uint64(), defaultgasprice, data)
+			tx := types.NewTransaction(nonce, tokenAddress, big.NewInt(0), defaultgas.Uint64(), big.NewInt(int64(suggestGas)), data)
 			signedTx, err := types.SignTx(tx, types.NewEIP155Signer(chainId), privateKey)
 			if err != nil {
 				log.Fatal(err)
