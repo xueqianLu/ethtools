@@ -1,4 +1,4 @@
-package main
+package utils
 
 import (
 	"context"
@@ -18,6 +18,11 @@ import (
 	"strings"
 	"sync"
 	"time"
+)
+
+var (
+	defaultGas, _      = new(big.Int).SetString("100000", 10)
+	defaultGasPrice, _ = new(big.Int).SetString("1000000000", 10)
 )
 
 type AccountNonce struct {
@@ -227,7 +232,7 @@ func buildSendTxString(from string, to string, value *big.Int, nonce uint64, num
 		hexval := value.Text(16)
 		hexnonce := strconv.FormatUint(nonce+uint64(i), 16)
 		_tx := TxArgs{From: from, To: to, Value: "0x" + hexval, Nonce: "0x" + hexnonce,
-			Gas: "0x" + defaultgas.Text(16), GasPrice: "0x" + defaultgasprice.Text(16)}
+			Gas: "0x" + defaultGas.Text(16), GasPrice: "0x" + defaultGasPrice.Text(16)}
 
 		ss.Txs = append(ss.Txs, _tx)
 		datas = append(datas, ss)
@@ -259,7 +264,7 @@ func buildSignString(from string, to string, value *big.Int, nonce uint64, data 
 	id := getRPCId()
 	datas := make([]interface{}, 0)
 	ss := SendSignData{Method: "eth_signTransaction", Jsonrpc: "2.0", Id: id}
-	_tx := TxArgs{From: from, To: to, Gas: "0x" + defaultgas.Text(16), GasPrice: "0x" + defaultgasprice.Text(16)}
+	_tx := TxArgs{From: from, To: to, Gas: "0x" + defaultGas.Text(16), GasPrice: "0x" + defaultGasPrice.Text(16)}
 	if value.Uint64() > 0 {
 		_tx.Value = "0x" + value.Text(16)
 	}
