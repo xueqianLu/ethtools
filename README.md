@@ -1,2 +1,2 @@
 # ethtools
-eth tools for something
+A tool set of ethereum.
