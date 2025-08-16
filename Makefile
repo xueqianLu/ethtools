@@ -4,7 +4,6 @@ GOBIN = $(shell pwd)/build/bin
 TAG ?= latest
 GOFILES_NOVENDOR := $(shell go list -f "{{.Dir}}" ./...)
 
-VERSION := $(shell git describe --tags)
 COMMIT_SHA1 := $(shell git rev-parse HEAD)
 AppName := etools
 
@@ -14,7 +13,6 @@ all: etools
 
 BUILD_FLAGS = -tags netgo -ldflags "\
 	-X github.com/xueqianLu/ethtools/versions.AppName=${AppName} \
-	-X github.com/xueqianLu/ethtools/versions.TagVersion=${VERSION} \
 	-X 'github.com/xueqianLu/ethtools/versions.BuildTime=`date`' \
 	-X github.com/xueqianLu/ethtools/versions.CommitSha1=${COMMIT_SHA1}  \
 	-X 'github.com/xueqianLu/ethtools/versions.GoVersion=`go version`' \
