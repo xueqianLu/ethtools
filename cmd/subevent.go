@@ -14,6 +14,7 @@ import (
 
 const (
 	ChainEndpointFlag   = "chain-endpoint"
+	MonitorCountFlag    = "monitor-count"
 	ContractAddressFlag = "token-address"
 )
 
@@ -23,11 +24,15 @@ var newBlockCmd = &cobra.Command{
 	Short: "Listen for new blocks on a chain",
 	Run: func(cmd *cobra.Command, args []string) {
 		chainEndpoint, _ := cmd.Flags().GetString(ChainEndpointFlag)
+		count, _ := cmd.Flags().GetInt64(MonitorCountFlag)
 		if chainEndpoint == "" {
 			log.Errorf("Chain endpoint is required")
 			return
 		}
-		listenForNewBlocks(chainEndpoint)
+		if count == 0 {
+			count = 20
+		}
+		listenForNewBlocks(chainEndpoint, count)
 	},
 }
 
@@ -57,11 +62,13 @@ func init() {
 	rootCmd.AddCommand(transferEventCmd)
 
 	newBlockCmd.Flags().String(ChainEndpointFlag, "", "Chain endpoint URL")
+	newBlockCmd.Flags().Int64(MonitorCountFlag, 20, "Sub block count to stop")
+
 	transferEventCmd.Flags().String(ChainEndpointFlag, "", "Chain endpoint URL")
 	transferEventCmd.Flags().String(ContractAddressFlag, "", "ERC-20 contract address")
 }
 
-func listenForNewBlocks(chainEndpoint string) {
+func listenForNewBlocks(chainEndpoint string, totalCount int64) {
 	client, err := ethclient.Dial(chainEndpoint)
 	if err != nil {
 		log.Fatalf("Failed to connect to the Ethereum client: %v", err)
@@ -72,6 +79,7 @@ func listenForNewBlocks(chainEndpoint string) {
 	if err != nil {
 		log.Fatalf("Failed to subscribe to new head events: %v", err)
 	}
+	var count int64 = 0
 
 	for {
 		select {
@@ -88,6 +96,11 @@ func listenForNewBlocks(chainEndpoint string) {
 			fmt.Println("Block Hash:", block.Hash().Hex())
 			fmt.Println("Block Timestamp:", block.Time())
 			fmt.Println("Number of Transactions:", len(block.Transactions()))
+			count++
+			if count >= totalCount {
+				fmt.Println("Reached the specified block count. Exiting...")
+				return
+			}
 		}
 	}
 }
