@@ -107,6 +107,7 @@ func doFetch(fetchUrl, targetUrl string, beginBlock uint64) {
 
 		// Add a small delay to avoid overwhelming the networks
 		time.Sleep(100 * time.Millisecond)
+		currentBlock++
 	}
 }
 
