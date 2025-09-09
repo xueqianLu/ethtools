@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"context"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"math/big"
+	"sync"
 	"time"
 )
 
@@ -75,7 +77,8 @@ func doFetch(fetchUrl, targetUrl string, beginBlock uint64) {
 		block, err := sourceClient.BlockByNumber(ctx, big.NewInt(int64(currentBlock)))
 		if err != nil {
 			log.Errorf("Failed to fetch block %d: %s", currentBlock, err)
-			return
+			time.Sleep(1 * time.Second)
+			continue
 		}
 		txs := block.Transactions()
 		if len(txs) == 0 {
@@ -86,6 +89,8 @@ func doFetch(fetchUrl, targetUrl string, beginBlock uint64) {
 		log.Infof("Processing block %d with %d transactions, remain block %d.", currentBlock, len(block.Transactions()), endBlock-currentBlock)
 
 		// Process each transaction in the block
+		wg := sync.WaitGroup{}
+		wait := make([]*types.Transaction, 0)
 		for _, tx := range block.Transactions() {
 			// Send transaction to target chain
 			err := targetClient.SendTransaction(ctx, tx)
@@ -93,17 +98,29 @@ func doFetch(fetchUrl, targetUrl string, beginBlock uint64) {
 				log.Errorf("Failed to send transaction %s: %s", tx.Hash().Hex(), err)
 				continue
 			}
-			// wait tx receipt.
-			for {
-				receipt, err := targetClient.TransactionReceipt(ctx, tx.Hash())
-				if err == nil {
-					log.Infof("transaction %s result : %d", tx.Hash().Hex(), receipt.Status)
-					break
-				}
-				time.Sleep(1 * time.Second)
-			}
+			wait = append(wait, tx)
 			log.Infof("Successfully sent transaction %s", tx.Hash().Hex())
 		}
+
+		// Wait for all transactions to be mined
+		for _, tx := range wait {
+			wg.Add(1)
+			go func(tx *types.Transaction) {
+				defer wg.Done()
+				receipt, err := targetClient.TransactionReceipt(ctx, tx.Hash())
+				for err != nil || receipt == nil {
+					time.Sleep(1 * time.Second)
+					receipt, err = targetClient.TransactionReceipt(ctx, tx.Hash())
+				}
+				if err != nil {
+					log.Errorf("Failed to get receipt for transaction %s: %s", tx.Hash().Hex(), err)
+					return
+				}
+				log.Infof("Transaction %s mined in block %d", tx.Hash().Hex(), receipt.BlockNumber.Uint64())
+			}(tx)
+		}
+		wg.Wait()
+		log.Infof("All transactions in block %d have been processed", currentBlock)
 
 		// Add a small delay to avoid overwhelming the networks
 		time.Sleep(100 * time.Millisecond)
