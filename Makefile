@@ -19,6 +19,9 @@ BUILD_FLAGS = -tags netgo -ldflags "\
 	-X 'github.com/xueqianLu/ethtools/versions.GitBranch=`git symbolic-ref --short -q HEAD`' \
 	"
 
+docker:
+	docker build -t etools:${TAG} .
+
 etools:
 	go build $(BUILD_FLAGS) -o=${GOBIN}/$@ -gcflags "all=-N -l" ./
 	@echo "Done building."
