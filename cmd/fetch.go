@@ -12,9 +12,10 @@ import (
 )
 
 const (
-	FetchUrlFlag   = "fetch-url"
-	TargetUrlFlag  = "target-url"
-	BeginBlockFlag = "begin-block"
+	FetchUrlFlag    = "fetch-url"
+	TargetUrlFlag   = "target-url"
+	BeginBlockFlag  = "begin-block"
+	TxBatchSizeFlag = "tx-batch-size"
 )
 
 // fetchCmd represents the fetch command
@@ -37,7 +38,8 @@ var fetchCmd = &cobra.Command{
 			log.Errorf("Begin block is required")
 			return
 		}
-		doFetch(fetchUrl, targetUrl, beginBlock)
+		txBatchSize, _ := cmd.Flags().GetUint64(TxBatchSizeFlag)
+		doFetch(fetchUrl, targetUrl, beginBlock, txBatchSize)
 	},
 }
 
@@ -112,7 +114,7 @@ func batchBroadCast(targetClient *ethclient.Client, batch []TxInfo) error {
 	return nil
 }
 
-func doFetch(fetchUrl, targetUrl string, beginBlock uint64) {
+func doFetch(fetchUrl, targetUrl string, beginBlock uint64, txBatchSize uint64) {
 	// Connect to source chain
 	sourceClient, err := ethclient.Dial(fetchUrl)
 	if err != nil {
@@ -142,7 +144,7 @@ func doFetch(fetchUrl, targetUrl string, beginBlock uint64) {
 
 	txCh := make(chan TxInfo, 1000)
 	go fetchTx(sourceClient, beginBlock, endBlock, txCh)
-	maxBatchSize := 20
+	maxBatchSize := int(txBatchSize)
 
 	batch := make([]TxInfo, 0, maxBatchSize)
 
@@ -176,6 +178,7 @@ func init() {
 	fetchCmd.Flags().String(FetchUrlFlag, "", "URL of the source chain to fetch from")
 	fetchCmd.Flags().String(TargetUrlFlag, "", "URL of the target chain to send to")
 	fetchCmd.Flags().Uint64(BeginBlockFlag, 0, "Block number to start fetching from")
+	fetchCmd.Flags().Uint64(TxBatchSizeFlag, 20, "Number of transactions to batch before sending")
 	fetchCmd.MarkFlagRequired(FetchUrlFlag)
 	fetchCmd.MarkFlagRequired(TargetUrlFlag)
 	fetchCmd.MarkFlagRequired(BeginBlockFlag)
