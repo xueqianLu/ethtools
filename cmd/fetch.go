@@ -48,7 +48,12 @@ func doFetch(fetchUrl, targetUrl string, beginBlock uint64) {
 	}
 	defer sourceClient.Close()
 
-	endBlock, _ := sourceClient.BlockNumber(context.Background())
+	endBlock, err := sourceClient.BlockNumber(context.Background())
+	if err != nil {
+		log.Errorf("Failed to get latest block number from source chain: %s", err)
+		return
+	}
+
 	if endBlock < beginBlock {
 		log.Errorf("end block %d < begin block %d", endBlock, beginBlock)
 		return
