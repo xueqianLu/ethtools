@@ -41,6 +41,77 @@ var fetchCmd = &cobra.Command{
 	},
 }
 
+type TxInfo struct {
+	originBlock uint64
+	idx         int
+	tx          *types.Transaction
+}
+
+func fetchTx(sourceClient *ethclient.Client, beginBlock uint64, endBlock uint64, txsCh chan TxInfo) error {
+	ctx := context.Background()
+	for currentBlock := beginBlock; currentBlock < endBlock; {
+		// Fetch block from source
+		block, err := sourceClient.BlockByNumber(ctx, big.NewInt(int64(currentBlock)))
+		if err != nil {
+			log.Errorf("Failed to fetch block %d: %s", currentBlock, err)
+			time.Sleep(1 * time.Second)
+			continue
+		}
+		txs := block.Transactions()
+		if len(txs) == 0 {
+			currentBlock++
+			continue
+		}
+
+		log.Infof("Processing block %d with %d transactions, remain block %d.", currentBlock, len(block.Transactions()), endBlock-currentBlock)
+
+		for i, tx := range txs {
+			txsCh <- TxInfo{
+				originBlock: block.Number().Uint64(),
+				idx:         i,
+				tx:          tx,
+			}
+		}
+		currentBlock++
+		time.Sleep(50 * time.Millisecond)
+	}
+	close(txsCh)
+	return nil
+}
+
+func batchBroadCast(targetClient *ethclient.Client, batch []TxInfo) error {
+	ctx := context.Background()
+	wg := sync.WaitGroup{}
+	wait := make([]TxInfo, 0)
+	for _, txInfo := range batch {
+		err := targetClient.SendTransaction(ctx, txInfo.tx)
+		if err != nil {
+			log.Errorf("Failed to send transaction %s: %s", txInfo.tx.Hash().Hex(), err)
+			continue
+		}
+		wait = append(wait, txInfo)
+	}
+	for _, txInfo := range wait {
+		wg.Add(1)
+		go func(info TxInfo) {
+			defer wg.Done()
+			receipt, err := targetClient.TransactionReceipt(ctx, info.tx.Hash())
+			for err != nil || receipt == nil {
+				time.Sleep(1 * time.Second)
+				receipt, err = targetClient.TransactionReceipt(ctx, info.tx.Hash())
+			}
+			if err != nil {
+				log.Errorf("Failed to get receipt for transaction %d:%s: %s", info.originBlock, info.tx.Hash().Hex(), err)
+				return
+			}
+			log.Infof("Transaction %d:%s mined in block %d", info.originBlock, info.tx.Hash().Hex(), receipt.BlockNumber.Uint64())
+		}(txInfo)
+	}
+	wg.Wait()
+
+	return nil
+}
+
 func doFetch(fetchUrl, targetUrl string, beginBlock uint64) {
 	// Connect to source chain
 	sourceClient, err := ethclient.Dial(fetchUrl)
@@ -69,63 +140,36 @@ func doFetch(fetchUrl, targetUrl string, beginBlock uint64) {
 	}
 	defer targetClient.Close()
 
-	ctx := context.TODO()
-	currentBlock := beginBlock
+	txCh := make(chan TxInfo, 1000)
+	go fetchTx(sourceClient, beginBlock, endBlock, txCh)
+	maxBatchSize := 20
 
-	for currentBlock = beginBlock; currentBlock < endBlock; {
-		// Fetch block from source
-		block, err := sourceClient.BlockByNumber(ctx, big.NewInt(int64(currentBlock)))
-		if err != nil {
-			log.Errorf("Failed to fetch block %d: %s", currentBlock, err)
-			time.Sleep(1 * time.Second)
-			continue
-		}
-		txs := block.Transactions()
-		if len(txs) == 0 {
-			currentBlock++
-			continue
-		}
+	batch := make([]TxInfo, 0, maxBatchSize)
 
-		log.Infof("Processing block %d with %d transactions, remain block %d.", currentBlock, len(block.Transactions()), endBlock-currentBlock)
-
-		// Process each transaction in the block
-		wg := sync.WaitGroup{}
-		wait := make([]*types.Transaction, 0)
-		for _, tx := range block.Transactions() {
-			// Send transaction to target chain
-			err := targetClient.SendTransaction(ctx, tx)
-			if err != nil {
-				log.Errorf("Failed to send transaction %s: %s", tx.Hash().Hex(), err)
-				continue
+	finish := false
+	for finish {
+		select {
+		case tx, ok := <-txCh:
+			if !ok {
+				finish = true
+				break
 			}
-			wait = append(wait, tx)
-			log.Infof("Successfully sent transaction %s", tx.Hash().Hex())
-		}
-
-		// Wait for all transactions to be mined
-		for _, tx := range wait {
-			wg.Add(1)
-			go func(tx *types.Transaction) {
-				defer wg.Done()
-				receipt, err := targetClient.TransactionReceipt(ctx, tx.Hash())
-				for err != nil || receipt == nil {
-					time.Sleep(1 * time.Second)
-					receipt, err = targetClient.TransactionReceipt(ctx, tx.Hash())
-				}
+			batch = append(batch, tx)
+			if len(batch) >= maxBatchSize {
+				err := batchBroadCast(targetClient, batch)
 				if err != nil {
-					log.Errorf("Failed to get receipt for transaction %s: %s", tx.Hash().Hex(), err)
-					return
+					log.Errorf("Failed to broadcast batch: %s", err)
 				}
-				log.Infof("Transaction %s mined in block %d", tx.Hash().Hex(), receipt.BlockNumber.Uint64())
-			}(tx)
+				batch = batch[:0]
+			}
 		}
-		wg.Wait()
-		log.Infof("All transactions in block %d have been processed", currentBlock)
-
-		// Add a small delay to avoid overwhelming the networks
-		time.Sleep(100 * time.Millisecond)
-		currentBlock++
 	}
+	if err := batchBroadCast(targetClient, batch); err != nil {
+		log.Errorf("Failed to broadcast final batch: %s", err)
+	} else {
+		log.Infof("Successfully fetched all transactions.", len(batch))
+	}
+	return
 }
 
 func init() {
