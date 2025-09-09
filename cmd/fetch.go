@@ -149,7 +149,7 @@ func doFetch(fetchUrl, targetUrl string, beginBlock uint64, txBatchSize uint64) 
 	batch := make([]TxInfo, 0, maxBatchSize)
 
 	finish := false
-	for finish {
+	for !finish {
 		select {
 		case tx, ok := <-txCh:
 			if !ok {
@@ -169,7 +169,7 @@ func doFetch(fetchUrl, targetUrl string, beginBlock uint64, txBatchSize uint64) 
 	if err := batchBroadCast(targetClient, batch); err != nil {
 		log.Errorf("Failed to broadcast final batch: %s", err)
 	} else {
-		log.Infof("Successfully fetched all transactions.", len(batch))
+		log.Infof("Successfully fetched all transactions.")
 	}
 	return
 }
