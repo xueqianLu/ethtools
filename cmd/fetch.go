@@ -70,7 +70,7 @@ func doFetch(fetchUrl, targetUrl string, beginBlock uint64) {
 	ctx := context.TODO()
 	currentBlock := beginBlock
 
-	for currentBlock < endBlock {
+	for currentBlock = beginBlock; currentBlock < endBlock; {
 		// Fetch block from source
 		block, err := sourceClient.BlockByNumber(ctx, big.NewInt(int64(currentBlock)))
 		if err != nil {
@@ -79,6 +79,7 @@ func doFetch(fetchUrl, targetUrl string, beginBlock uint64) {
 		}
 		txs := block.Transactions()
 		if len(txs) == 0 {
+			currentBlock++
 			continue
 		}
 
@@ -103,8 +104,6 @@ func doFetch(fetchUrl, targetUrl string, beginBlock uint64) {
 			}
 			log.Infof("Successfully sent transaction %s", tx.Hash().Hex())
 		}
-
-		currentBlock++
 
 		// Add a small delay to avoid overwhelming the networks
 		time.Sleep(100 * time.Millisecond)
